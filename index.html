@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Five-State Cellular Automaton Prototype</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #131a22;
+      --ink: #e6eef7;
+      --muted: #93a1b5;
+      --accent: #4cc9f0;
+      --accent-2: #b5179e;
+      --accent-3: #4895ef;
+      --good: #80ed99;
+      --warn: #ffd166;
+      --bad: #ef476f;
+      --grid: #1b2531;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: linear-gradient(180deg, #0b0f14, #0d1117 60%);
+      color: var(--ink);
+      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+    }
+    header, footer {
+      background: transparent;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: 0.2px; }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto;
+    }
+    .panel {
+      margin: 0 16px 12px; padding: 10px; background: var(--panel); border: 1px solid #223041; border-radius: 12px; box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+    }
+    .grid-wrap { display: grid; grid-template-columns: 220px 1fr; gap: 12px; height: 100%; }
+    .side { padding: 10px; display: grid; gap: 10px; align-content: start; }
+    .side h2 { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .08em; }
+
+    button, select, input[type="number"], input[type="text"], input[type="file"] {
+      background: #111923;
+      color: var(--ink);
+      border: 1px solid #273547;
+      border-radius: 10px;
+      padding: 8px 10px;
+      outline: none;
+      transition: .2s ease;
+    }
+    button:hover, select:hover, input:hover { border-color: #36506f; }
+    button:active { transform: translateY(1px); }
+    .btn-primary { background: linear-gradient(180deg, #1b2a3c, #152233); border-color: #3b6ea6; }
+    .btn-danger { background: #2a1117; border-color: #7d2434; }
+
+    .legend { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; }
+    .swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.18); }
+
+    canvas {
+      background: radial-gradient(1200px 800px at 80% -200px, rgba(100,180,255,0.06), transparent 70%),
+                  linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius: 14px; width: 100%; height: 100%; display: block; image-rendering: pixelated;
+    }
+    .canvas-wrap { position: relative; width: 100%; height: 100%; }
+    .hud { position: absolute; left: 10px; top: 10px; padding: 6px 10px; background: rgba(8,12,16,0.55); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Five‑State Cellular Automaton</h1>
+    <div class="toolbar">
+      <button id="play" class="btn-primary">▶ Play</button>
+      <button id="step">Step</button>
+      <label>Speed <input id="speed" type="range" min="1" max="60" value="12"></label>
+      <button id="clear" class="btn-danger">Clear</button>
+      <button id="random">Random</button>
+      <button id="save">Save</button>
+      <button id="load">Load</button>
+      <select id="templateSelect">
+        <option value="">Select Template</option>
+      </select>
+      <button id="saveTemplate">Save Template</button>
+    </div>
+  </header>
+
+  <div class="panel grid-wrap">
+    <div class="side">
+      <div>
+        <h2>Brush</h2>
+        <select id="brush">
+          <option value="0">Dead (0)</option>
+          <option value="1" selected>Living (1)</option>
+          <option value="2">Moving (2)</option>
+          <option value="3">Cloning (3)</option>
+          <option value="4">Shifting (4)</option>
+        </select>
+        <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+          <label>Brush Size <input id="brushSize" type="number" value="1" min="1" max="10" style="width:64px"></label>
+        </div>
+      </div>
+
+      <div>
+        <h2>Grid</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <label>Cols <input id="cols" type="number" value="80" min="10" max="300"></label>
+          <label>Rows <input id="rows" type="number" value="50" min="10" max="200"></label>
+        </div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button id="resize">Resize</button>
+          <button id="zoomIn">Zoom +</button>
+          <button id="zoomOut">Zoom −</button>
+        </div>
+      </div>
+
+      <div>
+        <h2>Legend</h2>
+        <div class="legend">
+          <div style="display:flex; align-items:center; gap:8px;"><div class="swatch" style="background:#0b0f14; border:1px dashed #223041"></div> Dead</div><div>0</div>
+          <div style="display:flex; align-items:center; gap:8px;"><div class="swatch" style="background:#80ed99"></div> Living</div><div>1</div>
+          <div style="display:flex; align-items:center; gap:8px;"><div class="swatch" style="background:#ffd166"></div> Moving</div><div>2</div>
+          <div style="display:flex; align-items:center; gap:8px;"><div class="swatch" style="background:#b5179e"></div> Cloning</div><div>3</div>
+          <div style="display:flex; align-items:center; gap:8px;"><div class="swatch" style="background:#4895ef"></div> Shifting</div><div>4</div>
+        </div>
+      </div>
+
+      <div>
+        <h2>Rules (condensed)</h2>
+        <ul style="margin:0 0 0 16px; color:var(--muted);">
+          <li>0↔1 use Conway (3×3 Moore).</li>
+          <li>2 (Moving): diamond r=2; moves away from local density; dies if &gt;7 in area.</li>
+          <li>3 (Cloning): diamond r=2; if &lt;6 clones nearby, clone to adjacent empties; dies if &gt;7.</li>
+          <li>4 (Shifting): 5×5; pushes touching cells + itself in chosen direction; dies if &gt;7. If a Moving cell hits it, adopt that direction.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="view"></canvas>
+      <div class="hud" id="hud">Paused • 0 fps</div>
+    </div>
+  </div>
+
+  <footer>
+    <div style="opacity:.75">Drag to paint • Right‑click to erase • Shift+Drag to pan • Wheel to zoom</div>
+  </footer>
+
+  <script>
+  // ---- Configuration ----
+  const STATE = { DEAD:0, LIVING:1, MOVING:2, CLONING:3, SHIFTING:4 };
+  const COLORS = {
+    [STATE.DEAD]: '#0b0f14',
+    [STATE.LIVING]: '#80ed99',
+    [STATE.MOVING]: '#ffd166',
+    [STATE.CLONING]: '#b5179e',
+    [STATE.SHIFTING]: '#4895ef',
+  };
+
+  // Neighborhood radii
+  const RADIUS_DIAMOND = 2;        // for MOVING + CLONING
+  const SHIFT_WINDOW_RADIUS = 2;    // 5x5 for SHIFTING
+
+  // Grid model
+  class Grid {
+    constructor(cols, rows) {
+      this.cols = cols; this.rows = rows;
+      this.cells = new Uint8Array(cols*rows); // state
+      // direction for MOVING / SHIFTING memory: store -1,0,1 encoded to 0..2
+      this.dx = new Int8Array(cols*rows); // -1..1
+      this.dy = new Int8Array(cols*rows);
+    }
+    idx(x,y){ return y*this.cols + x; }
+    inb(x,y){ return x>=0 && y>=0 && x<this.cols && y<this.rows; }
+    get(x,y){ return this.cells[this.idx(x,y)]; }
+    set(x,y,v){ this.cells[this.idx(x,y)] = v; }
+    setDir(x,y,dx,dy){ const i=this.idx(x,y); this.dx[i]=dx; this.dy[i]=dy; }
+    getDir(x,y){ const i=this.idx(x,y); return [this.dx[i], this.dy[i]]; }
+    fillRandom(p=0.2){
+      for(let y=0;y<this.rows;y++) for(let x=0;x<this.cols;x++){
+        const r = Math.random();
+        let s=0;
+        if(r< p*0.5) s=STATE.LIVING; else if(r< p*0.65) s=STATE.MOVING; else if(r< p*0.8) s=STATE.CLONING; else if(r< p*0.9) s=STATE.SHIFTING; else s=STATE.DEAD;
+        this.set(x,y,s);
+        if(s===STATE.MOVING||s===STATE.SHIFTING){ const [dx,dy]=randDir(); this.setDir(x,y,dx,dy); }
+      }
+    }
+    clear(){ this.cells.fill(0); this.dx.fill(0); this.dy.fill(0); }
+    clone(){ const g=new Grid(this.cols,this.rows); g.cells.set(this.cells); g.dx.set(this.dx); g.dy.set(this.dy); return g; }
+  }
+
+  // Utility
+  function randDir(){ const dirs=[[1,0],[-1,0],[0,1],[0,-1]]; return dirs[(Math.random()*dirs.length)|0]; }
+  function sign(n){ return n>0?1:n<0?-1:0; }
+
+  // Neighborhood helpers
+  function forMoore3x3(x,y,fn){
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      if(dx===0 && dy===0) continue; fn(x+dx,y+dy);
+    }
+  }
+  function forDiamond(x,y,r,fn){
+    for(let dy=-r; dy<=r; dy++){
+      const span = r - Math.abs(dy);
+      for(let dx=-span; dx<=span; dx++){
+        if(dx===0 && dy===0) continue; fn(x+dx,y+dy);
+      }
+    }
+  }
+  function forSquare(x,y,r,fn){ // (2r+1)x(2r+1)
+    for(let dy=-r; dy<=r; dy++) for(let dx=-r; dx<=r; dx++){
+      if(dx===0 && dy===0) continue; fn(x+dx,y+dy);
+    }
+  }
+
+  // Rule engine
+  class Engine {
+    constructor(cols=80, rows=50) {
+      this.g = new Grid(cols, rows);
+      this.g.fillRandom(0.15);
+      this.next = this.g.clone();
+      this.tmp = this.g.clone(); // used for staging movement intents
+    }
+
+    step(){
+      const {g} = this;
+      const next = new Grid(g.cols,g.rows);
+
+      // 1) Conway for Living/Dead (3x3 Moore)
+      for(let y=0;y<g.rows;y++){
+        for(let x=0;x<g.cols;x++){
+          const s = g.get(x,y);
+          let livingN=0;
+          forMoore3x3(x,y,(nx,ny)=>{ if(g.inb(nx,ny) && g.get(nx,ny)===STATE.LIVING) livingN++; });
+          if(s===STATE.LIVING){
+            next.set(x,y, (livingN===2 || livingN===3) ? STATE.LIVING : STATE.DEAD);
+          } else if(s===STATE.DEAD){
+            next.set(x,y, (livingN===3) ? STATE.LIVING : STATE.DEAD);
+          } else {
+            // carry other states for now; they'll be processed later
+            next.set(x,y, s);
+          }
+        }
+      }
+
+      // Copy direction memory
+      next.dx.set(g.dx); next.dy.set(g.dy);
+
+      // 2) Overpopulation for non-(Dead/Living)
+      for(let y=0;y<g.rows;y++){
+        for(let x=0;x<g.cols;x++){
+          const s = g.get(x,y);
+          if(s===STATE.MOVING || s===STATE.CLONING || s===STATE.SHIFTING){
+            let count=0;
+            if(s===STATE.SHIFTING){
+              forSquare(x,y,SHIFT_WINDOW_RADIUS,(nx,ny)=>{ if(g.inb(nx,ny) && g.get(nx,ny)!==STATE.DEAD) count++; });
+            } else {
+              forDiamond(x,y,RADIUS_DIAMOND,(nx,ny)=>{ if(g.inb(nx,ny) && g.get(nx,ny)!==STATE.DEAD) count++; });
+            }
+            if(count>7){ next.set(x,y,STATE.DEAD); next.setDir(x,y,0,0); }
+          }
+        }
+      }
+
+      // Prepare staging grid for pushes/moves/clones
+      const stage = next.clone(); // start from post-Conway + overpop results
+
+      // 3) Shifting: determine direction, push neighbors, move self
+      for(let y=0;y<g.rows;y++){
+        for(let x=0;x<g.cols;x++){
+          if(g.get(x,y)!==STATE.SHIFTING) continue;
+          if(stage.get(x,y)!==STATE.SHIFTING) continue; // might have died to overpop
+
+          // If a MOVING cell is adjacent and its next step would enter (x,y), adopt that direction
+          let adopted = false; let adx=0, ady=0;
+          forMoore3x3(x,y,(nx,ny)=>{
+            if(adopted||!g.inb(nx,ny)) return;
+            if(g.get(nx,ny)===STATE.MOVING){
+              const [mdx, mdy] = g.getDir(nx,ny);
+              if(nx+mdx===x && ny+mdy===y){ adopted=true; adx=mdx; ady=mdy; }
+            }
+          });
+
+          let dirx=0, diry=0;
+          if(adopted){ dirx=adx; diry=ady; }
+          else {
+            // Choose direction towards least occupied side in 5x5 (N,S,E,W counts)
+            const counts = {N:0,S:0,E:0,W:0};
+            forSquare(x,y,SHIFT_WINDOW_RADIUS,(nx,ny)=>{
+              if(!g.inb(nx,ny)) return;
+              if(g.get(nx,ny)!==STATE.DEAD){
+                if(ny<y) counts.N++; if(ny>y) counts.S++; if(nx>x) counts.E++; if(nx<x) counts.W++;
+              }
+            });
+            const options = [ ['N',counts.N,0,-1], ['S',counts.S,0,1], ['W',counts.W,-1,0], ['E',counts.E,1,0] ];
+            options.sort((a,b)=> a[1]-b[1]);
+            [ , , dirx, diry] = options[0];
+          }
+
+          // store chosen direction
+          stage.setDir(x,y,dirx,diry);
+
+          // Push adjacent neighbors (8‑connected) one step in that direction if destination empty
+          forMoore3x3(x,y,(nx,ny)=>{
+            if(!stage.inb(nx,ny)) return;
+            const sN = stage.get(nx,ny);
+            if(sN===STATE.DEAD) return;
+            const tx = nx+dirx, ty = ny+diry;
+            if(stage.inb(tx,ty) && stage.get(tx,ty)===STATE.DEAD){
+              stage.set(tx,ty,sN);
+              stage.set(nx,ny,STATE.DEAD);
+              // carry direction memory if needed
+              stage.setDir(tx,ty, ...stage.getDir(nx,ny));
+              stage.setDir(nx,ny,0,0);
+            }
+          });
+
+          // Move the shifting cell itself forward if possible
+          const sx = x+dirx, sy = y+diry;
+          if(stage.inb(sx,sy) && stage.get(sx,sy)===STATE.DEAD){
+            stage.set(sx,sy,STATE.SHIFTING);
+            stage.set(x,y,STATE.DEAD);
+            stage.setDir(sx,sy,dirx,diry);
+            stage.setDir(x,y,0,0);
+          }
+        }
+      }
+
+      // 4) Moving: compute direction away from local density in diamond r=2, then move
+      const postShift = stage.clone();
+      for(let y=0;y<g.rows;y++){
+        for(let x=0;x<g.cols;x++){
+          if(g.get(x,y)!==STATE.MOVING) continue;
+          if(postShift.get(x,y)!==STATE.MOVING) continue; // might have been pushed or died
+
+          // Compute density vector in diamond; move opposite
+          let vx=0, vy=0, neighbors=0;
+          forDiamond(x,y,RADIUS_DIAMOND,(nx,ny)=>{
+            if(!g.inb(nx,ny)) return;
+            const sN = g.get(nx,ny);
+            if(sN!==STATE.DEAD){ vx += (nx-x); vy += (ny-y); neighbors++; }
+          });
+          let dirx = -sign(vx), diry = -sign(vy);
+          if(dirx===0 && diry===0){ // keep previous or random
+            [dirx,diry] = g.getDir(x,y);
+            if(dirx===0 && diry===0){ [dirx,diry] = randDir(); }
+          }
+
+          // store dir
+          postShift.setDir(x,y,dirx,diry);
+          const tx = x+dirx, ty = y+diry;
+          if(postShift.inb(tx,ty) && postShift.get(tx,ty)===STATE.DEAD){
+            postShift.set(tx,ty,STATE.MOVING);
+            postShift.set(x,y,STATE.DEAD);
+            postShift.setDir(tx,ty,dirx,diry);
+            postShift.setDir(x,y,0,0);
+          }
+        }
+      }
+
+      // 5) Cloning: if fewer than 6 cloning cells in diamond r=2, clone into all adjacent empty cells
+      const finalGrid = postShift.clone();
+      for(let y=0;y<g.rows;y++){
+        for(let x=0;x<g.cols;x++){
+          if(g.get(x,y)!==STATE.CLONING) continue;
+          if(finalGrid.get(x,y)!==STATE.CLONING) continue; // may have changed already
+
+          let clonesNearby = 0;
+          forDiamond(x,y,RADIUS_DIAMOND,(nx,ny)=>{ if(g.inb(nx,ny) && g.get(nx,ny)===STATE.CLONING) clonesNearby++; });
+          if(clonesNearby < 6){
+            // clone to 8 neighbors if empty
+            forMoore3x3(x,y,(nx,ny)=>{
+              if(finalGrid.inb(nx,ny) && finalGrid.get(nx,ny)===STATE.DEAD){
+                finalGrid.set(nx,ny,STATE.CLONING);
+              }
+            });
+          }
+        }
+      }
+
+      this.g = finalGrid; // commit
+    }
+  }
+
+  // ---- Renderer ----
+  class Renderer {
+    constructor(canvas, engine){
+      this.c = canvas; this.ctx = canvas.getContext('2d');
+      this.engine = engine;
+      this.cellSize = 14; this.gap = 1; // visual spacing
+      this.offsetX = 10; this.offsetY = 10;
+      this.dragging = false; this.erasing = false; this.panning = false;
+      this.lastPaint = null;
+      this.resizeCanvas();
+      this.attach();
+      window.addEventListener('resize', () => this.resizeCanvas());
+    }
+
+    resizeCanvas(){
+      const canvas = this.c;
+      const parent = canvas.parentElement;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = parent.clientWidth * dpr;
+      canvas.height = parent.clientHeight * dpr;
+      canvas.style.width = `${parent.clientWidth}px`;
+      canvas.style.height = `${parent.clientHeight}px`;
+      this.ctx.scale(dpr, dpr);
+      this.draw();
+    }
+
+    gridToScreen(x,y){
+      return [this.offsetX + x * (this.cellSize + this.gap), this.offsetY + y * (this.cellSize + this.gap)];
+    }
+
+    screenToGrid(px,py){
+      const dpr = window.devicePixelRatio || 1;
+      const cellW = (this.cellSize + this.gap) * dpr;
+      const x = Math.floor((px * dpr - this.offsetX) / cellW);
+      const y = Math.floor((py * dpr - this.offsetY) / cellW);
+      return [x, y];
+    }
+
+    draw(){
+      const {ctx, c} = this; const g = this.engine.g;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.clearRect(0, 0, c.width / dpr, c.height / dpr);
+
+      // background grid
+      ctx.fillStyle = '#0c131c';
+      ctx.fillRect(0, 0, c.width / dpr, c.height / dpr);
+
+      for(let y = 0; y < g.rows; y++){
+        for(let x = 0; x < g.cols; x++){
+          const s = g.get(x, y);
+          const [px, py] = this.gridToScreen(x, y);
+          ctx.fillStyle = COLORS[s];
+          ctx.fillRect(px / dpr, py / dpr, this.cellSize, this.cellSize);
+          if(s !== STATE.DEAD){
+            ctx.globalAlpha = 0.08; ctx.fillStyle = '#ffffff';
+            ctx.fillRect(px / dpr + 2, py / dpr + 2, this.cellSize - 4, this.cellSize - 4);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+    }
+
+    resetDrawingState(){
+      this.dragging = false;
+      this.erasing = false;
+      this.panning = false;
+      this.lastPaint = null;
+      this.c.focus();
+    }
+
+    attachCanvasEvents(){
+      const canvas = this.c; const self = this; const g = this.engine.g;
+
+      function paintAt(x, y){
+        if(!g.inb(x, y)) return;
+        const brush = parseInt(document.getElementById('brush').value, 10);
+        const bsize = parseInt(document.getElementById('brushSize').value, 10);
+        for(let dy = -bsize + 1; dy <= bsize - 1; dy++){
+          for(let dx = -bsize + 1; dx <= bsize - 1; dx++){
+            const nx = x + dx, ny = y + dy; if(!g.inb(nx, ny)) continue;
+            g.set(nx, ny, self.erasing ? STATE.DEAD : brush);
+            if((brush === STATE.MOVING || brush === STATE.SHIFTING) && !self.erasing){
+              const [dx0, dy0] = randDir(); g.setDir(nx, ny, dx0, dy0);
+            } else if(self.erasing){ g.setDir(nx, ny, 0, 0); }
+          }
+        }
+      }
+
+      // Remove existing listeners to prevent duplicates
+      canvas.removeEventListener('contextmenu', this._contextmenuHandler);
+      canvas.removeEventListener('mousedown', this._mousedownHandler);
+      canvas.removeEventListener('mousemove', this._mousemoveHandler);
+      canvas.removeEventListener('mouseup', this._mouseupHandler);
+      canvas.removeEventListener('mouseleave', this._mouseleaveHandler);
+      canvas.removeEventListener('wheel', this._wheelHandler);
+
+      // Store handlers to allow removal later
+      this._contextmenuHandler = e => { e.preventDefault(); canvas.focus(); };
+      this._mousedownHandler = e => {
+        e.preventDefault(); e.stopPropagation();
+        canvas.focus();
+        self.resetDrawingState(); // Reset state on new interaction
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+        if(e.shiftKey){ self.panning = true; self.panStart = [x, y]; self.offStart = [self.offsetX, self.offsetY]; return; }
+        self.dragging = true; self.erasing = (e.button === 2 || e.ctrlKey);
+        const [gx, gy] = self.screenToGrid(x, y); paintAt(gx, gy); self.draw();
+      };
+      this._mousemoveHandler = e => {
+        e.preventDefault(); e.stopPropagation();
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+        if(self.panning){ self.offsetX = self.offStart[0] + (x - self.panStart[0]); self.offsetY = self.offStart[1] + (y - self.panStart[1]); self.draw(); return; }
+        if(!self.dragging) return;
+        const [gx, gy] = self.screenToGrid(x, y); if(self.lastPaint && self.lastPaint[0] === gx && self.lastPaint[1] === gy) return;
+        paintAt(gx, gy); self.lastPaint = [gx, gy]; self.draw();
+      };
+      this._mouseupHandler = e => { e.preventDefault(); e.stopPropagation(); self.resetDrawingState(); };
+      this._mouseleaveHandler = e => { e.preventDefault(); e.stopPropagation(); self.resetDrawingState(); };
+      this._wheelHandler = e => {
+        e.preventDefault(); e.stopPropagation();
+        const delta = Math.sign(e.deltaY);
+        const prev = self.cellSize;
+        self.cellSize = Math.min(40, Math.max(6, self.cellSize - delta));
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const [gx, gy] = self.screenToGrid(mx, my);
+        const [sx, sy] = self.gridToScreen(gx, gy);
+        self.offsetX += (mx - sx / (window.devicePixelRatio || 1));
+        self.offsetY += (my - sy / (window.devicePixelRatio || 1));
+        self.draw();
+      };
+
+      // Attach new listeners
+      canvas.addEventListener('contextmenu', this._contextmenuHandler);
+      canvas.addEventListener('mousedown', this._mousedownHandler);
+      canvas.addEventListener('mousemove', this._mousemoveHandler);
+      canvas.addEventListener('mouseup', this._mouseupHandler);
+      canvas.addEventListener('mouseleave', this._mouseleaveHandler);
+      canvas.addEventListener('wheel', this._wheelHandler);
+    }
+
+    async attach(){
+      const canvas = this.c; const self = this; const g = this.engine.g;
+      const hud = document.getElementById('hud');
+
+      // Initial canvas event attachment
+      this.attachCanvasEvents();
+
+      // Global click handler to restore focus
+      document.addEventListener('click', () => {
+        canvas.focus();
+        self.resetDrawingState();
+        self.attachCanvasEvents(); // Reattach to ensure listeners are active
+      });
+
+      // Controls
+      const cols = document.getElementById('cols');
+      const rows = document.getElementById('rows');
+      document.getElementById('resize').onclick = () => {
+        const C = parseInt(cols.value, 10), R = parseInt(rows.value, 10);
+        const eng2 = new Engine(C, R);
+        eng2.g.clear();
+        this.engine = eng2; this.draw();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+      document.getElementById('zoomIn').onclick = () => {
+        this.cellSize = Math.min(40, this.cellSize + 1); this.draw();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+      document.getElementById('zoomOut').onclick = () => {
+        this.cellSize = Math.max(6, this.cellSize - 1); this.draw();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+
+      document.getElementById('clear').onclick = () => {
+        this.engine.g.clear(); this.draw();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+      document.getElementById('random').onclick = () => {
+        this.engine.g.fillRandom(0.22); this.draw();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+
+      document.getElementById('save').onclick = () => {
+        const data = { cols: this.engine.g.cols, rows: this.engine.g.rows, cells: Array.from(this.engine.g.cells), dx: Array.from(this.engine.g.dx), dy: Array.from(this.engine.g.dy) };
+        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'automaton.json'; a.click();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+      document.getElementById('load').onclick = () => {
+        const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+        inp.onchange = async () => {
+          const file = inp.files[0]; const txt = await file.text();
+          const data = JSON.parse(txt);
+          const eng2 = new Engine(data.cols, data.rows);
+          eng2.g.cells.set(Uint8Array.from(data.cells));
+          eng2.g.dx.set(Int8Array.from(data.dx || []));
+          eng2.g.dy.set(Int8Array.from(data.dy || []));
+          this.engine = eng2; this.draw();
+          this.resetDrawingState();
+          this.attachCanvasEvents();
+        };
+        inp.click();
+      };
+
+      // Template handling with dynamic fetching from GitHub API
+      const templateSelect = document.getElementById('templateSelect');
+      try {
+        const response = await fetch('https://api.github.com/repos/tzarbomba64/FSCA/contents/Templates');
+        if (!response.ok) throw new Error(`GitHub API request failed: ${response.status}`);
+        const files = await response.json();
+        const templates = files.filter(file => file.name.endsWith('.fscat')).map(file => file.name);
+        templates.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t; opt.textContent = t.replace('.fscat', '');
+          templateSelect.appendChild(opt);
+        });
+      } catch (err) {
+        console.error('Error fetching templates:', err);
+        alert('Failed to fetch templates from GitHub. Using fallback templates.');
+        const fallbackTemplates = ['Glider.fscat', 'Oscillator.fscat', 'Spaceship.fscat', 'ComplexPattern.fscat'];
+        fallbackTemplates.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t; opt.textContent = t.replace('.fscat', '');
+          templateSelect.appendChild(opt);
+        });
+      }
+
+      templateSelect.onchange = async (e) => {
+        if (!e.target.value) return;
+        const url = `https://raw.githubusercontent.com/tzarbomba64/FSCA/main/Templates/${e.target.value}`;
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('Failed to fetch template');
+          const data = await resp.json();
+          const eng2 = new Engine(data.cols, data.rows);
+          eng2.g.cells.set(Uint8Array.from(data.cells));
+          eng2.g.dx.set(Int8Array.from(data.dx || []));
+          eng2.g.dy.set(Int8Array.from(data.dy || []));
+          this.engine = eng2; this.draw();
+          this.resetDrawingState();
+          this.attachCanvasEvents();
+        } catch (err) {
+          console.error('Error loading template:', err);
+          alert('Failed to load template');
+          this.resetDrawingState();
+          this.attachCanvasEvents();
+        }
+      };
+
+      document.getElementById('saveTemplate').onclick = () => {
+        const data = {
+          cols: this.engine.g.cols,
+          rows: this.engine.g.rows,
+          cells: Array.from(this.engine.g.cells),
+          dx: Array.from(this.engine.g.dx),
+          dy: Array.from(this.engine.g.dy)
+        };
+        const blob = new Blob([JSON.stringify(data)], { type: 'application/fscat' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `template_${Date.now()}.fscat`;
+        a.click();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+
+      // Play loop
+      let playing = false; let fps = 0; let last = performance.now(); let interval = 1000 / 12;
+      const speed = document.getElementById('speed');
+      speed.oninput = () => {
+        interval = 1000 / parseInt(speed.value, 10);
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+      function loop(now){
+        if (playing){
+          if (now - last >= interval){ last = now; const t0 = performance.now();
+            self.engine.step(); self.draw();
+            fps = Math.round(1000 / (performance.now() - t0));
+          }
+        }
+        hud.textContent = (playing ? 'Playing' : 'Paused') + ` • ${fps} fps`;
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+
+      document.getElementById('play').onclick = (e) => {
+        e.stopPropagation();
+        playing = !playing; e.target.textContent = playing ? '⏸ Pause' : '▶ Play';
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+      document.getElementById('step').onclick = () => {
+        this.engine.step(); this.draw();
+        this.resetDrawingState();
+        this.attachCanvasEvents();
+      };
+
+      // Initial draw
+      this.draw();
+    }
+  }
+
+  // Boot
+  const engine = new Engine(80, 50);
+  const renderer = new Renderer(document.getElementById('view'), engine);
+  </script>
+</body>
+</html>
